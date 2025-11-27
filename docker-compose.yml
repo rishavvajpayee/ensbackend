@@ -28,7 +28,7 @@ services:
       SECRET_KEY: your-secret-key-change-in-production
       ENVIRONMENT: development
     ports:
-      - "8000:8000"
+      - "8003:8003"
     depends_on:
       postgres:
         condition: service_healthy
@@ -39,7 +39,7 @@ services:
         echo 'Waiting for database...' &&
         sleep 5 &&
         python init_db.py --auto-seed &&
-        uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+        uvicorn main:app --host 0.0.0.0 --port 8003 --reload
       "
     networks:
       - ens_network
