@@ -1,6 +1,6 @@
 from pydantic import BaseModel, field_validator
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 class RelationshipCreate(BaseModel):
     ens_name_1: str
@@ -25,6 +25,7 @@ class RelationshipResponse(BaseModel):
     ens_name_1: str
     ens_name_2: str
     created_at: datetime
+    graph_id: Optional[int] = None
     
     class Config:
         from_attributes = True
@@ -37,4 +38,39 @@ class HealthResponse(BaseModel):
     status: str
     database: str
     timestamp: datetime
+
+
+# Graph-related schemas
+class GraphCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    
+    @field_validator('name')
+    @classmethod
+    def validate_name(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Graph name cannot be empty')
+        return v.strip()
+
+class GraphResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    relationship_count: Optional[int] = 0
+    
+    class Config:
+        from_attributes = True
+
+class GraphWithRelationships(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    relationships: List[RelationshipResponse] = []
+    
+    class Config:
+        from_attributes = True
 

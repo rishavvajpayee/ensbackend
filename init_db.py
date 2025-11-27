@@ -4,7 +4,7 @@ Creates tables and optionally seeds test data
 """
 import sys
 from database import engine, SessionLocal, Base
-from models import FriendRelationship
+from models import FriendRelationship, Graph
 
 def init_database():
     """Initialize database tables"""

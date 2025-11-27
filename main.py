@@ -6,12 +6,15 @@ from datetime import datetime
 from typing import List
 
 from database import engine, get_db, Base
-from models import FriendRelationship
+from models import FriendRelationship, Graph
 from schemas import (
     RelationshipCreate,
     RelationshipResponse,
     RelationshipDelete,
-    HealthResponse
+    HealthResponse,
+    GraphCreate,
+    GraphResponse,
+    GraphWithRelationships
 )
 
 # Create database tables
@@ -53,6 +56,178 @@ async def health_check(db: Session = Depends(get_db)):
         "timestamp": datetime.utcnow()
     }
 
+
+# =============================================================================
+# GRAPH MANAGEMENT ENDPOINTS
+# =============================================================================
+
+@app.get("/api/graphs", response_model=List[GraphResponse])
+async def get_all_graphs(db: Session = Depends(get_db)):
+    """Retrieve all graphs with their relationship counts"""
+    try:
+        graphs = db.query(Graph).order_by(Graph.created_at.desc()).all()
+        
+        # Add relationship count to each graph
+        result = []
+        for graph in graphs:
+            graph_dict = {
+                "id": graph.id,
+                "name": graph.name,
+                "description": graph.description,
+                "created_at": graph.created_at,
+                "updated_at": graph.updated_at,
+                "relationship_count": len(graph.relationships)
+            }
+            result.append(graph_dict)
+        
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve graphs: {str(e)}"
+        )
+
+
+@app.get("/api/graphs/{graph_id}", response_model=GraphWithRelationships)
+async def get_graph(graph_id: int, db: Session = Depends(get_db)):
+    """Get a specific graph with all its relationships"""
+    graph = db.query(Graph).filter(Graph.id == graph_id).first()
+    
+    if not graph:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Graph with id {graph_id} not found"
+        )
+    
+    return graph
+
+
+@app.post("/api/graphs", response_model=GraphResponse, status_code=status.HTTP_201_CREATED)
+async def create_graph(graph: GraphCreate, db: Session = Depends(get_db)):
+    """Create a new graph"""
+    
+    # Check if a graph with this name already exists
+    existing_graph = db.query(Graph).filter(Graph.name == graph.name).first()
+    
+    if existing_graph:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Graph with name '{graph.name}' already exists"
+        )
+    
+    # Create new graph
+    new_graph = Graph(
+        name=graph.name,
+        description=graph.description
+    )
+    
+    try:
+        db.add(new_graph)
+        db.commit()
+        db.refresh(new_graph)
+        
+        return {
+            "id": new_graph.id,
+            "name": new_graph.name,
+            "description": new_graph.description,
+            "created_at": new_graph.created_at,
+            "updated_at": new_graph.updated_at,
+            "relationship_count": 0
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create graph: {str(e)}"
+        )
+
+
+@app.delete("/api/graphs/{graph_id}")
+async def delete_graph(graph_id: int, db: Session = Depends(get_db)):
+    """Delete a graph and all its associated relationships"""
+    graph = db.query(Graph).filter(Graph.id == graph_id).first()
+    
+    if not graph:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Graph with id {graph_id} not found"
+        )
+    
+    try:
+        db.delete(graph)
+        db.commit()
+        
+        return {
+            "message": "Graph deleted successfully",
+            "deleted_id": graph_id
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete graph: {str(e)}"
+        )
+
+
+@app.post("/api/graphs/{graph_id}/relationships", response_model=RelationshipResponse, status_code=status.HTTP_201_CREATED)
+async def add_relationship_to_graph(
+    graph_id: int,
+    relationship: RelationshipCreate,
+    db: Session = Depends(get_db)
+):
+    """Add a new relationship to a specific graph"""
+    
+    # Check if graph exists
+    graph = db.query(Graph).filter(Graph.id == graph_id).first()
+    if not graph:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Graph with id {graph_id} not found"
+        )
+    
+    # Normalize the names to prevent duplicates
+    name1, name2 = normalize_relationship(
+        relationship.ens_name_1,
+        relationship.ens_name_2
+    )
+    
+    # Check if relationship already exists in this graph
+    existing = db.query(FriendRelationship).filter(
+        FriendRelationship.ens_name_1 == name1,
+        FriendRelationship.ens_name_2 == name2,
+        FriendRelationship.graph_id == graph_id
+    ).first()
+    
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Relationship between {name1} and {name2} already exists in this graph"
+        )
+    
+    # Create new relationship
+    new_relationship = FriendRelationship(
+        ens_name_1=name1,
+        ens_name_2=name2,
+        graph_id=graph_id
+    )
+    
+    try:
+        db.add(new_relationship)
+        db.commit()
+        db.refresh(new_relationship)
+        
+        return new_relationship
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to create relationship: {str(e)}"
+        )
+
+
+# =============================================================================
+# RELATIONSHIP ENDPOINTS (Legacy - for backward compatibility)
+# =============================================================================
 
 @app.get("/api/relationships", response_model=List[RelationshipResponse])
 async def get_all_relationships(
