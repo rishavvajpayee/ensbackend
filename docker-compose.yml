@@ -25,6 +25,10 @@ services:
     container_name: ens_backend
     environment:
       DATABASE_URL: postgresql://ens_user:ens_password@postgres:5432/ens_network
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ens_user
+      POSTGRES_PASSWORD: ens_password
+      POSTGRES_DB: ens_network
       SECRET_KEY: your-secret-key-change-in-production
       ENVIRONMENT: development
     ports:
@@ -34,13 +38,6 @@ services:
         condition: service_healthy
     volumes:
       - .:/app
-    command: >
-      sh -c "
-        echo 'Waiting for database...' &&
-        sleep 5 &&
-        python init_db.py --auto-seed &&
-        uvicorn main:app --host 0.0.0.0 --port 8003 --reload
-      "
     networks:
       - ens_network
 
